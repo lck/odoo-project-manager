@@ -1,0 +1,16 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "odoo-project-manager"
+version = "1.17.1"
+description = "Manages an Odoo development workspace from an odoo-project.toml file"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+opm = "opm:main"
+
+[tool.setuptools]
+py-modules = ["opm"]
