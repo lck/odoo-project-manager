@@ -68,7 +68,7 @@ If you pass `--dest-root`, OPM still creates files under `ROOT`, but **paths emb
 - `ROOT/odoo/` - Odoo repository
 - `ROOT/odoo-addons/<name>/` - addon repositories
 - `ROOT/odoo-backups/` - backups directory
-- `ROOT/odoo-data/` - data directory
+- `ROOT/odoo-data/` - data directory (can be customized via `[config] data_dir` in the INI file).
 - `ROOT/odoo-configs/` - generated `odoo-server.conf`
 - `ROOT/odoo-scripts/` - helper scripts (see below)
 - `ROOT/odoo-logs/` - runtime logs (created by `instance.sh`)
@@ -194,8 +194,6 @@ In addition, OPM injects a set of **runtime variables** (workspace paths) into t
 - `${configs_dir}` - `ROOT/odoo-configs`
 - `${config_path}` - full path to the generated `odoo-server.conf`
 - `${scripts_dir}` - `ROOT/odoo-scripts`
-- `${wheelhouse_dir}` - `ROOT/wheelhouse`
-- `${data_dir}` - `ROOT/odoo-data`
 - `${venv_python}` - full path to the virtualenv Python executable
 
 **Note on `--dest-root`:**
@@ -303,6 +301,7 @@ Set `shallow_clone = false` (or remove it) and re-run a sync. If the repo is sha
 - `--clear-pip-wheel-cache` - remove all items from the pip's wheel cache.
 - `--no-configs` - do not (re)generate config files (e.g. `ROOT/odoo-configs/odoo-server.conf`).
 - `--no-scripts` - do not (re)generate helper scripts under `ROOT/odoo-scripts/`.
+- `--no-data-dir` - do not generate odoo data folder.
 
 If no options are specified, OPM only regenerates configs and helper scripts.
 

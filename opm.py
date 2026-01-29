@@ -19,7 +19,7 @@ import shutil
 import stat
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
@@ -75,7 +75,7 @@ class Layout:
     backups_dir: Path
     configs_dir: Path
     conf_path: Path
-    var_data: Path
+    data_dir: Path
     scripts_dir: Path
     wheelhouse_dir: Path
     run_sh: Path
@@ -105,7 +105,7 @@ class Layout:
         backups_dir = root / "odoo-backups"
         configs_dir = root / "odoo-configs"
         conf_path = configs_dir / "odoo-server.conf"
-        var_data = root / "odoo-data"
+        data_dir = root / "odoo-data"
         scripts_dir = root / "odoo-scripts"
         wheelhouse_dir = root / "wheelhouse"
         run_sh = scripts_dir / "run.sh"
@@ -134,7 +134,7 @@ class Layout:
             backups_dir=backups_dir,
             configs_dir=configs_dir,
             conf_path=conf_path,
-            var_data=var_data,
+            data_dir=data_dir,
             scripts_dir=scripts_dir,
             wheelhouse_dir=wheelhouse_dir,
             run_sh=run_sh,
@@ -1094,16 +1094,15 @@ def render_odoo_conf(cfg: Dict[str, Any], layout: Layout, addon_paths: list[Path
 
     # Write every key from [config] (dynamic; no fixed schema), but treat addons_path specially.
     for key, value in cfg.items():
-        if key == "addons_path":
+        if key in ("addons_path", "data_dir"):
             continue
         lines.append(f"{key} = {_format_conf_value(value)}")
 
     # Always write merged addons_path.
     lines.append(f"addons_path = {merged_addons_path}")
 
-    # Preserve previous behavior for workspace-derived paths unless the user overrides them in [config].
-    if "data_dir" not in cfg:
-        lines.append(f"data_dir = {layout.var_data}")
+    # Always write data_dir from layout
+    lines.append(f"data_dir = {layout.data_dir}")
 
     return "\n".join(lines) + "\n"
 
@@ -1980,6 +1979,7 @@ def sync_project(
         clear_pip_wheel_cache: bool = False,
         no_configs: bool = False,
         no_scripts: bool = False,
+        no_data_dir: bool = False,
 ) -> None:
     root = (root_override or ini_path.parent).resolve()
     if root.exists() and not root.is_dir():
@@ -2015,8 +2015,6 @@ def sync_project(
         "configs_dir": str(layout.configs_dir),
         "config_path": str(layout.conf_path),
         "scripts_dir": str(layout.scripts_dir),
-        "wheelhouse_dir": str(layout.wheelhouse_dir),
-        "data_dir": str(layout.var_data),
         "venv_python": str((layout.root / "venv") / ("Scripts/python.exe" if sys.platform.startswith("win") else "bin/python")),
     }
     dest_runtime_vars = {
@@ -2029,8 +2027,6 @@ def sync_project(
         "configs_dir": str(dest_layout.configs_dir),
         "config_path": str(dest_layout.conf_path),
         "scripts_dir": str(dest_layout.scripts_dir),
-        "wheelhouse_dir": str(dest_layout.wheelhouse_dir),
-        "data_dir": str(dest_layout.var_data),
         "venv_python": str((dest_layout.root / "venv") / ("Scripts/python.exe" if sys.platform.startswith("win") else "bin/python")),
     }
 
@@ -2043,6 +2039,19 @@ def sync_project(
         addons=cfg_fs.addons,
         config=cfg_dest.config,
     )
+
+    # If user overrides "data_dir" via [config] section, propagate changes to dest_layout->data_dir.
+    if "data_dir" in cfg.config:
+        cfg_data_dir_raw = cfg.config.get("data_dir")
+        cfg_data_dir_path = Path(cfg_data_dir_raw.strip()).expanduser()
+        if not cfg_data_dir_path.is_absolute():
+            cfg_data_dir_path = dest_layout.root / cfg_data_dir_path
+        try:
+            cfg_data_dir = cfg_data_dir_path.resolve()
+        except Exception:
+            cfg_data_dir = cfg_data_dir_path.absolute()
+        _logger.warning(f"data_dir override via [config] section: from={dest_layout.data_dir}, to={cfg_data_dir}")
+        dest_layout = replace(dest_layout, data_dir=cfg_data_dir)
 
     # We optionally create/ensure the venv early so we can use its Python for `uv pip compile` / installs.
     venv_py: Optional[Path] = None
@@ -2099,11 +2108,12 @@ def sync_project(
                 "No sync target selected; regenerating config and helper scripts only (skipping venv/repo operations)."
             )
 
-    layout.backups_dir.mkdir(parents=True, exist_ok=True)
     layout.configs_dir.mkdir(parents=True, exist_ok=True)
     layout.addons_root.mkdir(parents=True, exist_ok=True)
-    layout.var_data.mkdir(parents=True, exist_ok=True)
     layout.scripts_dir.mkdir(parents=True, exist_ok=True)
+    layout.backups_dir.mkdir(parents=True, exist_ok=True)
+    if not no_data_dir:
+        dest_layout.data_dir.mkdir(parents=True, exist_ok=True)
 
     # Sync repositories first, collect all requirements, then compile + install once.
     req_files: list[Path] = []
@@ -2359,21 +2369,18 @@ def sync_project(
     if dest_layout.root != layout.root:
         print(f"  DEST_ROOT:          {dest_layout.root}")
     print(f"  Odoo:               {layout.odoo_dir}")
-    print(f"  Data:               {layout.var_data}")
     print(f"  Addons:             {layout.addons_root}")
     print(f"  Backups:            {layout.backups_dir}")
+    if no_data_dir:
+        print(f"  Data:               SKIPPED (--no-data-dir)")
+    else:
+        print(f"  Data:               {dest_layout.data_dir}")
     if no_configs:
         print(f"  Config:             SKIPPED (--no-configs) [{layout.conf_path}]")
-        if dest_layout.root != layout.root:
-            print(f"  Config (dest):      SKIPPED (--no-configs) [{dest_layout.conf_path}]")
     else:
         print(f"  Config:             {layout.conf_path}")
-        if dest_layout.root != layout.root:
-            print(f"  Config (dest):      {dest_layout.conf_path}")
     if venv_py is not None:
         print(f"  Venv:               {layout.root / 'venv'}")
-        if dest_layout.root != layout.root:
-            print(f"  Venv (dest):        {dest_layout.root / 'venv'}")
         lock_path = layout.wheelhouse_dir / "all-requirements.lock.txt"
         if lock_path.exists():
             print(f"  Requirements:       {lock_path}")
@@ -2520,6 +2527,11 @@ Examples:
         action="store_true",
         help="Do not (re)generate helper scripts under ROOT/odoo-scripts/.",
     )
+    parser.add_argument(
+        "--no-data-dir",
+        action="store_true",
+        help="Do not generate odoo data folder.",
+    )
 
     return parser
 
@@ -2575,6 +2587,7 @@ def main() -> None:
     create_wheelhouse = bool(getattr(args, 'create_wheelhouse', False))
     no_configs = bool(getattr(args, 'no_configs', False))
     no_scripts = bool(getattr(args, 'no_scripts', False))
+    no_data_dir = bool(getattr(args, 'no_data_dir', False))
     if reuse_wheelhouse and not create_venv:
         parser.error('--reuse-wheelhouse requires --create-venv (or --rebuild-venv)')
     if create_wheelhouse and reuse_wheelhouse:
@@ -2621,6 +2634,7 @@ def main() -> None:
         clear_pip_wheel_cache=clear_pip_wheel_cache,
         no_configs=no_configs,
         no_scripts=no_scripts,
+        no_data_dir=no_data_dir,
     )
 
 
