@@ -23,7 +23,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
-__version__ = "1.17.1"
+__version__ = "1.18.0"
 
 _logger = logging.getLogger("opm")
 
