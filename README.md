@@ -299,9 +299,9 @@ Set `shallow_clone = false` (or remove it) and re-run a sync. If the repo is sha
 - `--create-wheelhouse` - build/update the lock file + `ROOT/wheelhouse/` **without installing** project requirements into the venv.
   (OPM may create/update `ROOT/venv/` as a Python toolchain.)
 - `--clear-pip-wheel-cache` - remove all items from the pip's wheel cache.
-- `--no-configs` - do not (re)generate config files (e.g. `ROOT/odoo-configs/odoo-server.conf`).
-- `--no-scripts` - do not (re)generate helper scripts under `ROOT/odoo-scripts/`.
-- `--no-data-dir` - do not generate odoo data folder.
+- `--no-configs` - don’t generate config files (e.g. `ROOT/odoo-configs/odoo-server.conf`).
+- `--no-scripts` - don’t generate helper scripts under `ROOT/odoo-scripts/`.
+- `--no-data-dir` - don’t create the Odoo data folder under `ROOT/odoo-data/` (or a custom path set via `[config] data_dir` in the INI file).
 
 If no options are specified, OPM only regenerates configs and helper scripts.
 
