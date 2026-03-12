@@ -63,15 +63,20 @@ This is the minimal example for provisioning a workspace with Odoo 18.
 
 Create a file named `odoo-project.ini`.
 
+> **Note**
+> odoo-project.ini is only an example filename used in this README.
+> The project file can have a different name.
+
 ```ini
 [virtualenv]
-python_version = 3.11
+requirements =
+  lxml>=6
 
 [odoo]
-repo = https://github.com/odoo/odoo.git
-branch = 18.0
+version = 18.0
 
 [config]
+db_host = 127.0.0.1
 db_name = odoo
 db_user = odoo
 db_password = odoo
@@ -150,24 +155,25 @@ Add the extra addons to the `odoo-project.ini` file.
 
 ```ini
 [virtualenv]
-python_version = 3.11
+requirements =
+  lxml>=6
 
 [odoo]
-repo = https://github.com/odoo/odoo.git
-branch = 18.0
+version = 18.0
 
 [addons.oca-web]
 repo = https://github.com/OCA/web.git
-branch = 18.0
+branch = ${odoo:version}
 
 [addons.oca-helpdesk]
 repo = https://github.com/OCA/helpdesk.git
-branch = 18.0
+branch = ${odoo:version}
 
 [addons.my-custom-addons]
 path = odoo-addons/my-custom-addons
 
 [config]
+db_host = 127.0.0.1
 db_name = odoo
 db_user = odoo
 db_password = odoo
@@ -200,7 +206,7 @@ If you need the full Git history, set `shallow = false` in the relevant section 
 Example:
 
 ```ini
-[addons.my-custom-addons-git]
+[addons.my-custom-addons]
 repo = https://github.com/example/my-custom-addons.git
 branch = 18.0
 shallow = false
@@ -230,12 +236,18 @@ If you already have a suitable system Python installed, you can disable managed 
 
 #### 3.1. Update the project file
 
-Disable managed Python by adding `managed_python = false` to the `odoo-project.ini` file.
+Disable managed Python by adding `python_version = 3.11` and `managed_python = false` to the `odoo-project.ini` file.
+
+> **Note**
+> Set `python_version` to the Python version you want to use from your local system.
+> In the example below, 3.11 is only illustrative.
 
 ```ini
 [virtualenv]
 python_version = 3.11
 managed_python = false
+requirements =
+  lxml>=6
 ```
 
 #### 3.2. Update the workspace
@@ -308,3 +320,126 @@ This is useful for simple deployments where Python dependencies are prepared on 
 - `--create-venv` — recreate `ROOT/venv` and refresh the wheelhouse; if `ROOT/venv` already exists, it is deleted and created again
 - `--create-venv-from-wheelhouse` — recreate `ROOT/venv` from an existing `ROOT/wheelhouse/` and `all-requirements.lock.txt`, install strictly offline, and skip lock compilation and wheelhouse build
 - `--clear-pip-wheel-cache` — remove all items from pip's wheel cache
+
+---
+
+## Project file reference
+
+The `odt-env` project file is an INI file that describes the Odoo workspace to create.
+
+At minimum, the project file must contain these sections:
+
+- `[odoo]`
+- `[config]`
+
+The following sections are supported:
+
+- `[virtualenv]` — optional Python and dependency settings
+- `[odoo]` — required Odoo source settings
+- `[addons.<name>]` — optional addon sources
+- `[config]` — required Odoo server configuration values
+
+### General rules
+
+- The project file can have any filename. In this README, `odoo-project.ini` is only an example.
+- INI interpolation is supported, so values such as `${odoo:version}` can be reused across sections.
+- Multi-line values are used for lists such as `requirements`, `build_constraints`, and `requirements_ignore`.
+
+### `[virtualenv]`
+
+This section is optional.
+
+- `python_version` — Python version for the virtual environment. If omitted, `odt-env` chooses a default version based on the selected Odoo version.
+- `managed_python` — whether `uv` should install and manage Python automatically. Default: `true`.
+- `requirements` — additional Python requirements to install. Multi-line list.
+- `build_constraints` — additional build constraints used during dependency compilation. Multi-line list.
+- `requirements_ignore` — package names to ignore when collecting requirements from addon repositories. Multi-line list.
+
+Example:
+
+```ini
+[virtualenv]
+python_version = 3.11
+managed_python = false
+build_constraints =
+  setuptools<82
+requirements =
+  lxml>=6
+  requests
+requirements_ignore =
+  babel
+```
+
+### `[odoo]`
+
+This section is required.
+
+- `version` — Odoo version in `X.0` format, for example `18.0`. Required.
+- `repo` — Git repository URL for Odoo. Default: the official Odoo repository.
+- `branch` — Git branch to check out. Default: the same value as `version`.
+- `shallow` — whether to use a shallow clone. Default: `true`.
+
+Example:
+
+```ini
+[odoo]
+version = 18.0
+repo = https://github.com/odoo/odoo.git
+branch = 18.0
+shallow = true
+```
+
+### `[addons.<name>]`
+
+Addon sections are optional. You can define as many as needed.
+
+Each addon must use exactly one of these source types:
+
+- local addon path: `path`
+- git repository: `repo` + `branch` (+ optional `shallow`)
+
+Rules:
+
+- For a local addon, use only `path`.
+- For a git addon, `repo` and `branch` are required.
+- `shallow` is optional for git addons and defaults to `true`.
+- Relative local paths are resolved relative to `ROOT/`.
+- Git-based addons are cloned into `ROOT/odoo-addons/<name>/`.
+- All configured addon directories are automatically appended to the generated `addons_path`.
+
+Examples:
+
+```ini
+[addons.my-custom-addons]
+path = odoo-addons/my-custom-addons
+
+[addons.oca-web]
+repo = https://github.com/OCA/web.git
+branch = ${odoo:version}
+shallow = true
+```
+
+### `[config]`
+
+This section is required.
+
+It contains Odoo server configuration values written into `ROOT/odoo-configs/odoo-server.conf`.
+
+You can define standard Odoo configuration options here.
+
+Special rules:
+
+- `addons_path` must not be set in `[config]`. `odt-env` always generates it automatically.
+- `data_dir` may be set in `[config]`. If provided, it overrides the default data directory location.
+
+Example:
+
+```ini
+[config]
+db_host = 127.0.0.1
+db_port = 5432
+db_name = odoo
+db_user = odoo
+db_password = odoo
+http_port = 8069
+```

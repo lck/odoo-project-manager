@@ -19,7 +19,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Optional
 
 from . import __version__
 
@@ -32,6 +32,20 @@ _DEFAULT_REQUIREMENTS = [
     "click-odoo-contrib",
 ]
 
+_DEFAULT_ODOO_REPO = "https://github.com/odoo/odoo.git"
+
+_ODOO_VENV_SETTINGS = {
+    # odoo_ver: (min_py_ver, max_py_ver, build_constraints, requirements)
+    12: ("3.5", "3.8", ["setuptools<58"], ["setuptools<58"]),
+    13: ("3.6", "3.8", ["setuptools<58"], ["setuptools<58"]),
+    14: ("3.6", "3.10", ["setuptools<82"], ["setuptools<82"]),
+    15: ("3.7", "3.12", ["setuptools<82"], ["setuptools<82"]),
+    16: ("3.7", "3.13", ["setuptools<82"], ["setuptools<82"]),
+    17: ("3.10", "3.13", ["setuptools<82"], ["setuptools<82"]),
+    18: ("3.10", "3.13", ["setuptools<82"], ["setuptools<82"]),
+    19: ("3.10", "3.13", [], []),
+}
+
 _SENSITIVE_KEYS = ("password", "passwd", "secret", "token", "api_key", "apikey", "private_key")
 
 
@@ -40,11 +54,10 @@ _SENSITIVE_KEYS = ("password", "passwd", "secret", "token", "api_key", "apikey",
 # -----------------------------
 
 @dataclass(frozen=True)
-class RepoSpec:
+class OdooSpec:
+    version: str
     repo: str
     branch: str
-    # If True, keep repo as a shallow, single-branch clone (depth=1).
-    # If False, do a full clone/fetch.
     shallow: bool = True
 
 
@@ -72,7 +85,7 @@ class VirtualenvConfig:
 @dataclass(frozen=True)
 class ProjectConfig:
     virtualenv: VirtualenvConfig
-    odoo: RepoSpec
+    odoo: OdooSpec
     addons: Dict[str, AddonSpec]
     config: Dict[str, Any]
 
@@ -209,6 +222,31 @@ def _read_ini(entry_ini: Path) -> configparser.ConfigParser:
     return cp
 
 
+def _parse_odoo_version(odoo_version: str) -> int:
+    raw_value = (odoo_version or "").strip()
+    match = re.fullmatch(r"(\d+)\.0", raw_value)
+    if not match:
+        raise Exception(
+            "Invalid option 'version' in section [odoo] "
+            "(expected format 'X.0', for example '12.0' or '13.0')."
+        )
+    return int(match.group(1))
+
+
+def _get_default_virtualenv_settings(odoo_version: str) -> tuple[str, list[str], list[str]]:
+    odoo_major_version = _parse_odoo_version(odoo_version)
+
+    if odoo_major_version not in _ODOO_VENV_SETTINGS:
+        supported_versions = ", ".join(f"{version}.0" for version in sorted(_ODOO_VENV_SETTINGS))
+        raise Exception(
+            f"Unsupported Odoo version '{odoo_version}' in section [odoo]. "
+            f"Supported versions: {supported_versions}"
+        )
+
+    _min_python_version, max_python_version, build_constraints, requirements = _ODOO_VENV_SETTINGS[odoo_major_version]
+    return max_python_version, list(build_constraints), list(requirements)
+
+
 def load_project_config(
         ini_path: Path,
 ) -> ProjectConfig:
@@ -244,29 +282,53 @@ def load_project_config(
             ) from e
 
     # Sections expected:
-    #   [virtualenv]
+    #   [virtualenv] (optional)
     #   [odoo]
-    #   [addons.<name>] for each addon
+    #   [addons.<name>] for each addon (optional)
     #   [config]
 
-    if not cp.has_section("virtualenv"):
-        raise Exception("Missing INI section: [virtualenv]")
+    odoo_version = _require_option("odoo", "version").strip()
+    default_python_version, default_build_constraints, default_requirements = _get_default_virtualenv_settings(
+        odoo_version
+    )
 
     python_version = cp.get("virtualenv", "python_version", fallback="").strip()
     if not python_version:
-        raise Exception("Missing option 'python_version' in section [virtualenv].")
+        python_version = default_python_version
+
+    ini_build_constraints = _get_list("virtualenv", "build_constraints")
+    ini_requirements = _get_list("virtualenv", "requirements")
+
+    build_constraints = list(dict.fromkeys([
+        *default_build_constraints,
+        *ini_build_constraints,
+    ]))
+    requirements = list(dict.fromkeys([
+        *default_requirements,
+        *ini_requirements,
+    ]))
+
+    requirements_ignore = _get_list("virtualenv", "requirements_ignore")
+    for spec in requirements:
+        name = _extract_req_name_from_spec(spec)
+        if name and name not in requirements_ignore:
+            requirements_ignore.append(name)
 
     venv = VirtualenvConfig(
         python_version=python_version,
-        build_constraints=_get_list("virtualenv", "build_constraints"),
-        requirements=_get_list("virtualenv", "requirements"),
-        requirements_ignore=_get_list("virtualenv", "requirements_ignore"),
+        build_constraints=build_constraints,
+        requirements=requirements,
+        requirements_ignore=requirements_ignore,
         managed_python=_get_bool("virtualenv", "managed_python", default=True),
     )
 
-    odoo = RepoSpec(
-        repo=_require_option("odoo", "repo"),
-        branch=_require_option("odoo", "branch"),
+    odoo_repo = cp.get("odoo", "repo", fallback="").strip() or _DEFAULT_ODOO_REPO
+    odoo_branch = cp.get("odoo", "branch", fallback="").strip() or odoo_version
+
+    odoo = OdooSpec(
+        repo=odoo_repo,
+        branch=odoo_branch,
+        version=odoo_version,
         shallow=_get_bool("odoo", "shallow", default=True),
     )
 
@@ -526,7 +588,16 @@ def compile_all_requirements_lock(
     if shutil.which("uv") is None:
         raise Exception("Required command not found in PATH: uv")
 
-    ignore_set = {_canonicalize_project_name(x) for x in (requirements_ignore or []) if x.strip()}
+    ignore_set: set[str] = set()
+    for spec in requirements_ignore or []:
+        spec = spec.strip()
+        if not spec:
+            continue
+        name = _extract_req_name_from_spec(spec)
+        if name:
+            ignore_set.add(name)
+        else:
+            ignore_set.add(_canonicalize_project_name(spec))
     wheelhouse_dir.mkdir(parents=True, exist_ok=True)
     in_path = wheelhouse_dir / "all-requirements.in.txt"
 

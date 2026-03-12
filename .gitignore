@@ -78,5 +78,5 @@ build/
 dist/
 *.egg-info/
 
-# build-dist scripts
-opm-dist-*
+# tests
+tests
