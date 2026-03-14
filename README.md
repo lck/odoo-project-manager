@@ -301,6 +301,7 @@ This is useful for simple deployments where Python dependencies are prepared on 
 ### Paths and outputs
 
 - `--root` — workspace root directory (default: the directory containing the INI file)
+- `-e KEY=VALUE`, `--extra-var KEY=VALUE` — override or inject a value in the optional `[vars]` section; can be repeated
 - `--no-configs` — do not generate config files
 - `--no-scripts` — do not generate helper scripts under `ROOT/odoo-scripts/`
 - `--no-data-dir` — do not create the Odoo data directory
@@ -334,6 +335,7 @@ At minimum, the project file must contain these sections:
 
 The following sections are supported:
 
+- `[vars]` — optional reusable variables for INI interpolation
 - `[virtualenv]` — optional Python and dependency settings
 - `[odoo]` — required Odoo source settings
 - `[addons.<name>]` — optional addon sources
@@ -343,7 +345,41 @@ The following sections are supported:
 
 - The project file can have any filename. In this README, `odoo-project.ini` is only an example.
 - INI interpolation is supported, so values such as `${odoo:version}` can be reused across sections.
+- The optional `[vars]` section is useful for reusable values referenced as `${vars:name}`.
+- Values from `[vars]` can be overridden from the CLI with `-e name=value` / `--extra-var name=value`.
 - Multi-line values are used for lists such as `requirements`, `build_constraints`, and `requirements_ignore`.
+
+### `[vars]`
+
+This section is optional.
+
+Use it for reusable values that you want to interpolate in other sections.
+
+Example:
+
+```ini
+[vars]
+odoo_version = 18.0
+odoo_branch = 18.0
+db_name = odoo
+db_user = odoo
+db_password = odoo
+
+[odoo]
+version = ${vars:odoo_version}
+branch = ${vars:odoo_branch}
+
+[config]
+db_name = ${vars:db_name}
+db_user = ${vars:db_user}
+db_password = ${vars:db_password}
+```
+
+CLI override example:
+
+```bash
+odt-env odoo-project.ini --sync-all --create-venv -e odoo_version=19.0 -e odoo_branch=19.0 -e db_name=odoo19_test
+```
 
 ### `[virtualenv]`
 

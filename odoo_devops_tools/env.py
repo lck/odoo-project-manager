@@ -214,11 +214,52 @@ def _ini_for_audit_log(cp: configparser.ConfigParser) -> str:
 # INI loading
 # -----------------------------
 
-def _read_ini(entry_ini: Path) -> configparser.ConfigParser:
+def _parse_cli_vars(extra_vars: list[str]) -> Dict[str, str]:
+    overrides: Dict[str, str] = {}
+
+    for item in extra_vars:
+        raw_item = (item or "").strip()
+        if not raw_item or "=" not in raw_item:
+            raise Exception(
+                f"Invalid -e/--extra-var value '{item}' (expected format KEY=VALUE)."
+            )
+
+        key, value = raw_item.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+
+        if not key:
+            raise Exception(
+                f"Invalid -e/--extra-var value '{item}' (expected non-empty KEY=VALUE)."
+            )
+
+        if key in overrides:
+            _logger.warning("CLI override for [vars].%s redefined; using last value.", key)
+
+        overrides[key] = value
+
+    return overrides
+
+
+def _read_ini(
+        entry_ini: Path,
+        vars_overrides: Optional[Dict[str, str]] = None,
+) -> configparser.ConfigParser:
     cp = configparser.ConfigParser(interpolation=configparser.ExtendedInterpolation())
     read_ok = cp.read(entry_ini, encoding="utf-8")
     if not read_ok:
         raise Exception(f"Failed to read INI config: {entry_ini}")
+
+    if vars_overrides:
+        if not cp.has_section("vars"):
+            cp.add_section("vars")
+
+        for key, value in vars_overrides.items():
+            opt_l = key.lower()
+            log_value = "******" if any(k in opt_l for k in _SENSITIVE_KEYS) else value
+            _logger.info("Applying CLI override to [vars].%s=%s", key, log_value)
+            cp.set("vars", key, value)
+
     return cp
 
 
@@ -249,11 +290,12 @@ def _get_default_virtualenv_settings(odoo_version: str) -> tuple[str, list[str],
 
 def load_project_config(
         ini_path: Path,
+        vars_overrides: Optional[Dict[str, str]] = None,
 ) -> ProjectConfig:
     if not ini_path.exists():
         raise Exception(f"INI config not found: {ini_path}")
 
-    cp = _read_ini(ini_path)
+    cp = _read_ini(ini_path, vars_overrides=vars_overrides)
 
     _logger.info("Loaded INI (resolved) from %s:\n%s", ini_path, _ini_for_audit_log(cp))
 
@@ -1918,13 +1960,14 @@ def sync_project(
         no_configs: bool = False,
         no_scripts: bool = False,
         no_data_dir: bool = False,
+        vars_overrides: Optional[Dict[str, str]] = None,
 ) -> None:
     root = (root_override or ini_path.parent).resolve()
     if root.exists() and not root.is_dir():
         raise Exception(f"ROOT exists but is not a directory: {root}")
     layout = Layout.from_root(root)
 
-    cfg = load_project_config(ini_path)
+    cfg = load_project_config(ini_path, vars_overrides=vars_overrides)
 
     # If user overrides "data_dir" via [config] section, propagate changes to layout->data_dir.
     if "data_dir" in cfg.config:
@@ -2317,6 +2360,7 @@ Examples:
   odt-env /path/to/odoo-project.ini --sync-all --create-venv
   odt-env /path/to/odoo-project.ini --sync-all --create-venv --root /path/to/workspace-root
   odt-env /path/to/odoo-project.ini --create-venv-from-wheelhouse
+  odt-env /path/to/odoo-project.ini --sync-all --create-venv -e odoo_version=19.0
 """
 
     parser = argparse.ArgumentParser(
@@ -2344,6 +2388,19 @@ Examples:
         metavar="ROOT",
         default=None,
         help="Override workspace ROOT directory (default: directory containing INI).",
+    )
+
+    parser.add_argument(
+        "-e",
+        "--extra-var",
+        dest="extra_vars",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "Override or inject a variable in the optional [vars] INI section. "
+            "Can be passed multiple times. Example: -e odoo_version=19.0"
+        ),
     )
 
     target = parser.add_mutually_exclusive_group()
@@ -2446,6 +2503,14 @@ def main() -> None:
     no_scripts = bool(getattr(args, 'no_scripts', False))
     no_data_dir = bool(getattr(args, 'no_data_dir', False))
 
+    try:
+        vars_overrides = _parse_cli_vars(getattr(args, 'extra_vars', []) or [])
+    except Exception as e:
+        parser.error(str(e))
+
+    if vars_overrides:
+        _logger.info('CLI [vars] overrides enabled for keys: %s', ', '.join(sorted(vars_overrides)))
+
     ini_path = Path(args.ini).expanduser().resolve()
     if not ini_path.exists():
         parser.error(f'INI file does not exist: {ini_path}')
@@ -2482,6 +2547,7 @@ def main() -> None:
             no_configs=no_configs,
             no_scripts=no_scripts,
             no_data_dir=no_data_dir,
+            vars_overrides=vars_overrides,
         )
     except Exception as e:
         _logger.error(f'{e}')
