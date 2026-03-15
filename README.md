@@ -355,30 +355,29 @@ This section is optional.
 
 Use it for reusable values that you want to interpolate in other sections.
 
+A major advantage of `[vars]` is that its values can also be overridden directly from the CLI with `-e KEY=VALUE` / `--extra-var KEY=VALUE`. This makes it easy to keep a single project file and adjust things like Odoo version, branch, or database name per run without editing the file.
+
 Example:
 
 ```ini
 [vars]
-odoo_version = 18.0
-odoo_branch = 18.0
-db_name = odoo
-db_user = odoo
-db_password = odoo
+branch = 18.0
+db = odoo
 
 [odoo]
-version = ${vars:odoo_version}
-branch = ${vars:odoo_branch}
+version = 18.0
+branch = ${vars:branch}
 
 [config]
-db_name = ${vars:db_name}
-db_user = ${vars:db_user}
-db_password = ${vars:db_password}
+db_name = ${vars:db}
+db_user = odoo
+db_password = odoo
 ```
 
 CLI override example:
 
 ```bash
-odt-env odoo-project.ini --sync-all --create-venv -e odoo_version=19.0 -e odoo_branch=19.0 -e db_name=odoo19_test
+odt-env odoo-project.ini --sync-all --create-venv -e branch=dev -e db=odoo_dev
 ```
 
 ### `[virtualenv]`
