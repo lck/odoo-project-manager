@@ -5,9 +5,9 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TESTS_DIR="${ROOT_DIR}/tests"
 rm -rf ${TESTS_DIR}
 
-ODOO_VERSIONS=(12 13 14 15 16 17 18 19)
+SUPPORTED_ODOO_VERSIONS=(17 18 19)
 
-for odoo_ver in "${ODOO_VERSIONS[@]}"; do
+for odoo_ver in "${SUPPORTED_ODOO_VERSIONS[@]}"; do
   project_dir="${TESTS_DIR}/odoo${odoo_ver}"
   project_ini="${project_dir}/odoo-project.ini"
 
@@ -30,7 +30,7 @@ db_password = odoo
 EOF
 
   echo "Creating workspace for Odoo ${odoo_ver}..."
-  odt-env "${project_ini}" --sync-all --create-venv
+  odt-env "${project_ini}" --sync-all --create-venv --clear-pip-wheel-cache
 
   #echo "Running initdb.sh for Odoo ${odoo_ver}..."
   #bash "${project_dir}/odoo-scripts/initdb.sh"

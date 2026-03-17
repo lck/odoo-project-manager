@@ -39,11 +39,11 @@ _ODOO_VENV_SETTINGS = {
     12: ("3.5", "3.8", ["setuptools<58"], ["setuptools<58"]),
     13: ("3.6", "3.8", ["setuptools<58"], ["setuptools<58"]),
     14: ("3.6", "3.10", ["setuptools<82"], ["setuptools<82"]),
-    15: ("3.7", "3.12", ["setuptools<82"], ["setuptools<82"]),
-    16: ("3.7", "3.13", ["setuptools<82"], ["setuptools<82"]),
-    17: ("3.10", "3.13", ["setuptools<82"], ["setuptools<82"]),
-    18: ("3.10", "3.13", ["setuptools<82"], ["setuptools<82"]),
-    19: ("3.10", "3.13", [], []),
+    15: ("3.7", "3.10", ["setuptools<82"], ["setuptools<82"]),
+    16: ("3.7", "3.10", ["setuptools<82"], ["setuptools<82"]),
+    17: ("3.10", "3.12", ["setuptools<82"], ["setuptools<82"]),
+    18: ("3.10", "3.12", ["setuptools<82"], ["setuptools<82"]),
+    19: ("3.10", "3.12", [], []),
 }
 
 _SENSITIVE_KEYS = ("password", "passwd", "secret", "token", "api_key", "apikey", "private_key")
