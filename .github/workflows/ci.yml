@@ -1,0 +1,108 @@
+name: Test Create Workspace
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  odoo-minimal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: odoo
+          POSTGRES_PASSWORD: odoo
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U odoo -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Install Odoo system requirements
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git \
+            postgresql-client \
+            build-essential \
+            libffi-dev \
+            libjpeg-dev \
+            libldap2-dev \
+            libpq-dev \
+            libsasl2-dev \
+            libxml2-dev \
+            libxslt1-dev \
+            zlib1g-dev
+
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Verify uv
+        run: uv --version
+
+      - name: Generate INI file
+        shell: bash
+        run: |
+          cat > odoo-project.ini <<EOF
+          [vars]
+          version = 18.0
+
+          [odoo]
+          version = \${vars:version}
+
+          [config]
+          db_host = 127.0.0.1
+          db_port = 5432
+          db_user = odoo
+          db_password = odoo
+          db_name = odoo
+          EOF
+
+          echo "Generated odoo-project.ini:"
+          cat odoo-project.ini
+
+      - name: Create workspace root
+        run: mkdir -p odoo-minimal
+
+      - name: Provision minimal Odoo workspace
+        run: |
+          uv run odt-env ./odoo-project.ini \
+            --sync-all \
+            --create-venv \
+            --root odoo-minimal \
+            -e version=19.0
+
+      - name: Check generated scripts
+        run: |
+          test -x odoo-minimal/odoo-scripts/initdb.sh
+          ls -la odoo-minimal/odoo-scripts
+
+      - name: Init database
+        working-directory: odoo-minimal
+        run: ./odoo-scripts/initdb.sh
+
+      - name: Update addons
+        working-directory: odoo-minimal
+        run: ./odoo-scripts/update.sh
+
+      - name: Show generated workspace
+        if: always()
+        run: |
+          echo "Workspace tree:"
+          find odoo-minimal -maxdepth 2 | sort
+          echo
+          echo "Configs:"
+          ls -la odoo-minimal/odoo-configs || true
