@@ -58,6 +58,7 @@ class OdooSpec:
     version: str
     repo: str
     branch: str
+    commit: Optional[str] = None
     shallow: bool = True
 
 
@@ -65,6 +66,7 @@ class OdooSpec:
 class AddonSpec:
     repo: Optional[str] = None
     branch: Optional[str] = None
+    commit: Optional[str] = None
     path: Optional[str] = None
     shallow: bool = True
 
@@ -366,10 +368,12 @@ def load_project_config(
 
     odoo_repo = cp.get("odoo", "repo", fallback="").strip() or _DEFAULT_ODOO_REPO
     odoo_branch = cp.get("odoo", "branch", fallback="").strip() or odoo_version
+    odoo_commit = cp.get("odoo", "commit", fallback="").strip() or None
 
     odoo = OdooSpec(
         repo=odoo_repo,
         branch=odoo_branch,
+        commit=odoo_commit,
         version=odoo_version,
         shallow=_get_bool("odoo", "shallow", default=True),
     )
@@ -383,6 +387,7 @@ def load_project_config(
             has_path = cp.has_option(sec, "path")
             has_repo = cp.has_option(sec, "repo")
             has_branch = cp.has_option(sec, "branch")
+            has_commit = cp.has_option(sec, "commit")
             has_shallow = cp.has_option(sec, "shallow")
 
             path_value = cp.get(sec, "path", fallback="").strip() if has_path else ""
@@ -391,11 +396,11 @@ def load_project_config(
                     raise Exception(
                         f"Invalid option 'path' in section [{sec}] (expected non-empty string)."
                     )
-                if has_repo or has_branch or has_shallow:
+                if has_repo or has_branch or has_commit or has_shallow:
                     raise Exception(
                         f"Invalid addon source in section [{sec}]: "
                         "use either 'path' only for a local addon, or 'repo' + 'branch' "
-                        "(+ optional 'shallow') for a git addon."
+                        "(+ optional 'commit' and 'shallow') for a git addon."
                     )
                 addons[name] = AddonSpec(path=path_value)
                 continue
@@ -403,6 +408,7 @@ def load_project_config(
             addons[name] = AddonSpec(
                 repo=_require_option(sec, "repo"),
                 branch=_require_option(sec, "branch"),
+                commit=cp.get(sec, "commit", fallback="").strip() or None,
                 shallow=_get_bool(sec, "shallow", default=True),
             )
 
@@ -905,6 +911,21 @@ def _unshallow_if_needed(repo_dir: Path) -> None:
     _run(["git", "fetch", "--unshallow", "--tags", "origin"], cwd=repo_dir)
 
 
+def _fetch_branch(repo_dir: Path, branch: Optional[str], depth: Optional[int] = None) -> None:
+    """Fetch only the requested branch from origin.
+
+    When `depth` is provided, the fetch stays shallow. When omitted, the fetch uses
+    full history for the requested branch only.
+    """
+    fetch_cmd: list[str] = ["git", "fetch", "--prune"]
+    if depth is not None:
+        fetch_cmd += ["--depth", str(depth)]
+    fetch_cmd += ["origin"]
+    if branch:
+        fetch_cmd += [branch]
+    _run(fetch_cmd, cwd=repo_dir)
+
+
 def ensure_repo(
         repo_url: str,
         dest: Path,
@@ -941,13 +962,10 @@ def ensure_repo(
             return
 
         # Fetch only the required branch (useful for shallow/single-branch workflows).
-        fetch_cmd: list[str] = ["git", "fetch", "--prune"]
-        if depth is not None:
-            fetch_cmd += ["--depth", str(depth)]
-        fetch_cmd += ["origin"]
-        if branch:
-            fetch_cmd += [branch]
-        _run(fetch_cmd, cwd=dest)
+        if depth is None and _is_shallow_repo(dest):
+            _unshallow_if_needed(dest)
+
+        _fetch_branch(dest, branch=branch, depth=depth)
         return
 
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -1008,6 +1026,86 @@ def checkout_branch(dest: Path, branch: str, fetch_all: bool = True, depth: Opti
     _run(["git", "checkout", "-B", branch, f"origin/{branch}"], cwd=dest)
     # Ensure the working tree exactly matches the remote branch (no pull, no extra refs).
     _run(["git", "reset", "--hard", f"origin/{branch}"], cwd=dest)
+    assert_clean_worktree(dest)
+
+
+def _has_commit(repo_dir: Path, commit: str) -> bool:
+    try:
+        _run(["git", "rev-parse", "--verify", f"{commit}^{{commit}}"], cwd=repo_dir)
+        return True
+    except Exception:
+        return False
+
+
+def checkout_commit(
+        dest: Path,
+        commit: str,
+        branch: Optional[str] = None,
+        fetch_all: bool = True,
+        depth: Optional[int] = None,
+) -> None:
+    """Fetch and checkout a specific commit in detached HEAD state.
+
+    Fast path for commit-based sync:
+    - start from a shallow fetch of the requested branch
+    - if the commit is not reachable yet, deepen the same branch incrementally
+    - only fall back to full history for that branch when needed
+
+    This keeps recent commit checkouts close to the speed of the normal shallow
+    branch workflow while still supporting older commits.
+    """
+    _logger.info(
+        "checkout_commit: %s @ %s (branch=%s, fetch_all=%s, depth=%s)",
+        dest, commit, branch, fetch_all, depth,
+    )
+    assert_clean_worktree(dest)
+
+    if fetch_all:
+        if depth is None:
+            _ensure_full_origin_refspec(dest)
+            _unshallow_if_needed(dest)
+        _run(["git", "fetch", "--all", "--tags", "--prune"], cwd=dest)
+    else:
+        if branch:
+            _fetch_branch(dest, branch=branch, depth=depth)
+
+    if not _has_commit(dest, commit) and not fetch_all and branch and depth is not None:
+        for deepen_by in (50, 200, 1000):
+            _logger.info(
+                "Commit %s not reachable yet on origin/%s; deepening shallow history by %s.",
+                commit,
+                branch,
+                deepen_by,
+            )
+            _run([
+                "git", "fetch", "--prune", "--deepen", str(deepen_by), "origin", branch,
+            ], cwd=dest)
+            if _has_commit(dest, commit):
+                break
+
+    if not _has_commit(dest, commit) and not fetch_all and branch:
+        _logger.info(
+            "Commit %s still not reachable on origin/%s; fetching full history for that branch.",
+            commit,
+            branch,
+        )
+        if _is_shallow_repo(dest):
+            _run(["git", "fetch", "--unshallow", "--prune", "origin", branch], cwd=dest)
+        else:
+            _fetch_branch(dest, branch=branch, depth=None)
+
+    if not _has_commit(dest, commit):
+        try:
+            fallback_cmd = ["git", "fetch", "--prune", "origin", commit]
+            if depth is not None:
+                fallback_cmd[2:2] = ["--depth", str(depth)]
+            _run(fallback_cmd, cwd=dest)
+        except Exception:
+            pass
+
+    _run(["git", "rev-parse", "--verify", f"{commit}^{{commit}}"], cwd=dest)
+    _run(["git", "checkout", "--detach", commit], cwd=dest)
+    _run(["git", "reset", "--hard", commit], cwd=dest)
     assert_clean_worktree(dest)
 
 
@@ -2041,7 +2139,28 @@ def sync_project(
     req_files: list[Path] = []
 
     if sync_odoo:
-        if cfg.odoo.shallow:
+        if cfg.odoo.commit:
+            _logger.info(
+                "Syncing Odoo repo at commit %s (branch=%s) using shallow fetch with incremental deepen fallback.",
+                cfg.odoo.commit,
+                cfg.odoo.branch,
+            )
+            ensure_repo(
+                cfg.odoo.repo,
+                layout.odoo_dir,
+                branch=cfg.odoo.branch,
+                depth=1,
+                single_branch=True,
+                fetch_all=False,
+            )
+            checkout_commit(
+                layout.odoo_dir,
+                cfg.odoo.commit,
+                branch=cfg.odoo.branch,
+                fetch_all=False,
+                depth=1,
+            )
+        elif cfg.odoo.shallow:
             # Shallow + single branch (default; disable with [odoo] shallow=false).
             ensure_repo(
                 cfg.odoo.repo,
@@ -2086,6 +2205,28 @@ def sync_project(
                     "Using local addon path for [%s]: %s (skipping git sync)",
                     addon_name,
                     dest,
+                )
+            elif spec.commit:
+                _logger.info(
+                    "Syncing addon [%s] at commit %s (branch=%s) using shallow fetch with incremental deepen fallback.",
+                    addon_name,
+                    spec.commit,
+                    spec.branch,
+                )
+                ensure_repo(
+                    spec.repo,
+                    dest,
+                    branch=spec.branch,
+                    depth=1,
+                    single_branch=True,
+                    fetch_all=False,
+                )
+                checkout_commit(
+                    dest,
+                    spec.commit,
+                    branch=spec.branch,
+                    fetch_all=False,
+                    depth=1,
                 )
             elif spec.shallow:
                 # Shallow + single branch (default; disable with [addons.<name>] shallow=false).

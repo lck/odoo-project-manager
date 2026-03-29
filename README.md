@@ -203,6 +203,8 @@ A full clone usually only makes sense for custom addons that are actively being 
 
 If you need the full Git history, set `shallow = false` in the relevant section and run `odt-env` again with a sync option.
 
+If you set `commit`, `odt-env` automatically ignores `shallow` and fetches enough history to check out the requested commit.
+
 Example:
 
 ```ini
@@ -212,7 +214,41 @@ branch = 18.0
 shallow = false
 ```
 
-#### 2.4. Update database and run Odoo
+#### 2.4. Optional: Pin Odoo or an addon to a specific commit
+
+By default, git repositories are tracked by branch.
+
+If you need a reproducible workspace tied to an exact Git revision, you can also specify `commit` in the relevant `[odoo]` or `[addons.<name>]` section.
+
+Example for Odoo:
+
+```ini
+[odoo]
+version = 18.0
+repo = https://github.com/odoo/odoo.git
+branch = 18.0
+commit = e6ec487
+```
+
+Example for an addon repository:
+
+```ini
+[addons.oca-web]
+repo = https://github.com/OCA/web.git
+branch = ${odoo:version}
+commit = abcdef1
+```
+
+> **Note**
+> when `commit` is set, `shallow` is ignored automatically, because a shallow clone may not contain the requested commit.
+
+After changing the project file, run `odt-env` again to update the workspace:
+
+```bash
+odt-env odoo-project.ini --sync-all --create-venv
+```
+
+### 2.5. Update database and run Odoo
 
 Once the workspace has been updated, refresh installed modules:
 
@@ -355,7 +391,7 @@ This section is optional.
 
 Use it for reusable values that you want to interpolate in other sections.
 
-A major advantage of `[vars]` is that its values can also be overridden directly from the CLI with `-e KEY=VALUE` / `--extra-var KEY=VALUE`. This makes it easy to keep a single project file and adjust things like Odoo version, branch, or database name per run without editing the file.
+A major advantage of `[vars]` is that its values can also be overridden directly from the CLI with `-e KEY=VALUE` / `--extra-var KEY=VALUE`. This makes it easy to keep a single project file and adjust things like Odoo version, branch, commit, or database name per run without editing the file.
 
 Example:
 
@@ -412,7 +448,8 @@ This section is required.
 - `version` — Odoo version in `X.0` format, for example `18.0`. Required.
 - `repo` — Git repository URL for Odoo. Default: the official Odoo repository.
 - `branch` — Git branch to check out. Default: the same value as `version`.
-- `shallow` — whether to use a shallow clone. Default: `true`.
+- `commit` — optional Git commit to check out after fetching the selected branch. When set, the repository is pinned to that exact revision.
+- `shallow` — whether to use a shallow clone. Default: `true`. Ignored when `commit` is set.
 
 Example:
 
@@ -421,6 +458,7 @@ Example:
 version = 18.0
 repo = https://github.com/odoo/odoo.git
 branch = 18.0
+commit = e6ec487
 shallow = true
 ```
 
@@ -431,13 +469,14 @@ Addon sections are optional. You can define as many as needed.
 Each addon must use exactly one of these source types:
 
 - local addon path: `path`
-- git repository: `repo` + `branch` (+ optional `shallow`)
+- git repository: `repo` + `branch` (+ optional `commit` and `shallow`)
 
 Rules:
 
 - For a local addon, use only `path`.
 - For a git addon, `repo` and `branch` are required.
-- `shallow` is optional for git addons and defaults to `true`.
+- `commit` is optional for a git addon. When set, the repository is pinned to that exact revision.
+- `shallow` is optional for git addons and defaults to `true`. It is ignored when `commit` is set.
 - Relative local paths are resolved relative to `ROOT/`.
 - Git-based addons are cloned into `ROOT/odoo-addons/<name>/`.
 - All configured addon directories are automatically appended to the generated `addons_path`.
@@ -451,7 +490,7 @@ path = odoo-addons/my-custom-addons
 [addons.oca-web]
 repo = https://github.com/OCA/web.git
 branch = ${odoo:version}
-shallow = true
+commit = abcdef1
 ```
 
 ### `[config]`
