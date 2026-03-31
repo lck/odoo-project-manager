@@ -540,9 +540,8 @@ Any extra arguments are forwarded to the underlying command `odoo-bin`.
 Examples:
 
 ```bash
-./odoo-scripts/test.sh -i my_module
-./odoo-scripts/test.sh -i my_module --test-tags /my_module
-./odoo-scripts/test.sh -u my_module --test-tags my_module.tests
+./odoo-scripts/test.sh -i sale --test-tags /sale
+./odoo-scripts/test.sh --test-tags /web
 ```
 
 ### shell
@@ -567,8 +566,8 @@ Examples:
 
 ```bash
 ./odoo-scripts/initdb.sh
-./odoo-scripts/initdb.sh -i base
-./odoo-scripts/initdb.sh -i base,sale,stock,my_custom_addon
+./odoo-scripts/initdb.sh -m base
+./odoo-scripts/initdb.sh -m sale,crm
 ```
 
 ### backup
