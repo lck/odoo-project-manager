@@ -85,9 +85,7 @@ ROOT/
 │   ├── initdb.sh         # initialize the configured database
 │   ├── backup.sh         # create a timestamped ZIP backup in ROOT/odoo-backups/
 │   ├── restore.sh        # restore a backup into the configured database
-│   ├── restore_force.sh  # restore a backup and overwrite an existing database
 │   ├── update.sh         # update modules, auto-detecting addons to update using file-content hashes stored in the DB
-│   └── update_all.sh     # force a full upgrade (-u base)
 ├── venv/                 # Python virtual environment
 └── wheelhouse/           # wheelhouse for offline installs
 ```
@@ -492,4 +490,123 @@ db_name = odoo
 db_user = odoo
 db_password = odoo
 http_port = 8069
+```
+
+---
+
+## Script reference
+
+All generated scripts are available in both Unix (`.sh`) and Windows (`.bat`) variants.
+The examples below use the Unix form.
+
+### run
+
+Starts Odoo in the foreground.
+
+Any extra arguments are forwarded to the underlying command `odoo-bin`.
+
+Examples:
+
+```bash
+./odoo-scripts/run.sh
+./odoo-scripts/run.sh --dev=all
+./odoo-scripts/run.sh -i sale,stock --stop-after-init
+```
+
+### instance
+
+Manages Odoo as a background service on Unix-like systems.
+
+Logs are written to `ROOT/odoo-logs/odoo-server.log` and the PID is stored in `ROOT/odoo-logs/odoo-server.pid`.
+
+Examples:
+
+```bash
+./odoo-scripts/instance.sh start
+./odoo-scripts/instance.sh start --dev=all
+./odoo-scripts/instance.sh restart
+./odoo-scripts/instance.sh stop
+./odoo-scripts/instance.sh status
+```
+
+### test
+
+Runs Odoo tests.
+
+The script always adds `--test-enable --stop-after-init`.
+
+Any extra arguments are forwarded to the underlying command `odoo-bin`.
+
+Examples:
+
+```bash
+./odoo-scripts/test.sh -i my_module
+./odoo-scripts/test.sh -i my_module --test-tags /my_module
+./odoo-scripts/test.sh -u my_module --test-tags my_module.tests
+```
+
+### shell
+
+Opens an Odoo shell.
+
+Examples:
+
+```bash
+./odoo-scripts/shell.sh
+```
+
+### initdb
+
+Creates or initializes an Odoo database.
+
+The script always adds `--no-demo --no-cache --unless-exists -n <db_name>`.
+
+Any extra arguments are forwarded to the underlying command `click-odoo-initdb` from [`click-odoo-contrib`](https://pypi.org/project/click-odoo-contrib/) package.
+
+Examples:
+
+```bash
+./odoo-scripts/initdb.sh
+./odoo-scripts/initdb.sh -i base
+./odoo-scripts/initdb.sh -i base,sale,stock,my_custom_addon
+```
+
+### backup
+
+Creates a timestamped ZIP backup under `ROOT/odoo-backups/`.
+
+Any extra arguments are forwarded to the underlying command `click-odoo-backupdb` from [`click-odoo-contrib`](https://pypi.org/project/click-odoo-contrib/) package.
+
+Examples:
+
+```bash
+./odoo-scripts/backup.sh
+```
+
+### restore
+
+Restores a backup into the configured database.
+
+The script always adds `--copy --neutralize`.
+
+Any extra arguments are forwarded to the underlying command `click-odoo-restoredb` from [`click-odoo-contrib`](https://pypi.org/project/click-odoo-contrib/) package.
+
+Examples:
+
+```bash
+./odoo-scripts/restore.sh ./odoo-backups/odoo_20260331_221443.zip
+./odoo-scripts/restore.sh ./odoo-backups/odoo_20260331_221443.zip --force
+```
+
+### update
+
+Updates an Odoo database automatically detecting addons to update based on a hash of their file content.
+
+Any extra arguments are forwarded to the underlying command `click-odoo-update` from [`click-odoo-contrib`](https://pypi.org/project/click-odoo-contrib/) package.
+
+Examples:
+
+```bash
+./odoo-scripts/update.sh
+./odoo-scripts/update.sh --update-all
 ```

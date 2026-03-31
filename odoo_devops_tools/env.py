@@ -1812,91 +1812,6 @@ endlocal
     layout.script("restore", "bat").write_text(content.replace("\n", "\r\n"), encoding="utf-8")
 
 
-def write_restore_force_sh(layout: Layout, db_name: str) -> None:
-    content = f"""#!/usr/bin/env bash
-set -euo pipefail
-
-# Resolve script directory
-SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
-ROOT_DIR="$(cd "${{SCRIPT_DIR}}/.." && pwd)"
-
-VENV_DIR="${{ROOT_DIR}}/venv"
-RESTORE_BIN="${{VENV_DIR}}/bin/click-odoo-restoredb"
-CONF="${{ROOT_DIR}}/odoo-configs/odoo-server.conf"
-
-if [[ ! -d "${{VENV_DIR}}" ]]; then
-  echo "ERROR: required venv directory not found at ${{VENV_DIR}}" >&2
-  exit 1
-fi
-if [[ ! -x "${{RESTORE_BIN}}" ]]; then
-  echo "ERROR: click-odoo-restoredb not found/executable at ${{RESTORE_BIN}}" >&2
-  exit 1
-fi
-if [[ ! -f "${{CONF}}" ]]; then
-  echo "ERROR: Odoo config not found at ${{CONF}}" >&2
-  exit 1
-fi
-
-if [[ $# -lt 1 ]]; then
-  echo "ERROR: missing restore source (backup file/path). Provide it as the first argument." >&2
-  echo "Example: ./restore_force.sh /path/to/backup.zip" >&2
-  exit 2
-fi
-
-echo "INFO: Restoring Odoo database '{db_name}' using config ${{CONF}}. Passing through any extra arguments."
-exec "${{RESTORE_BIN}}" -c "${{CONF}}" --copy --neutralize --force --log-level debug "{db_name}" "$@"
-"""
-    layout.scripts_dir.mkdir(parents=True, exist_ok=True)
-    layout.script("restore_force", "sh").write_text(content, encoding="utf-8")
-
-    try:
-        mode = layout.script("restore_force", "sh").stat().st_mode
-        layout.script("restore_force", "sh").chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    except OSError:
-        pass
-
-
-def write_restore_force_bat(layout: Layout, db_name: str) -> None:
-    content = rf"""@echo off
-setlocal enabledelayedexpansion
-
-REM Resolve ROOT directory (parent of this script directory)
-set SCRIPT_DIR=%~dp0
-if "%SCRIPT_DIR:~-1%"=="\" set SCRIPT_DIR=%SCRIPT_DIR:~0,-1%
-for %%I in ("%SCRIPT_DIR%\..") do set ROOT_DIR=%%~fI
-
-set VENV_DIR=%ROOT_DIR%\venv
-set RESTORE_BIN=%VENV_DIR%\Scripts\click-odoo-restoredb.exe
-set CONF=%ROOT_DIR%\odoo-configs\odoo-server.conf
-
-if not exist "%VENV_DIR%" (
-  echo ERROR: required venv directory not found at %VENV_DIR%
-  exit /b 1
-)
-if not exist "%RESTORE_BIN%" (
-  echo ERROR: click-odoo-restoredb not found at %RESTORE_BIN%
-  exit /b 1
-)
-if not exist "%CONF%" (
-  echo ERROR: Odoo config not found at %CONF%
-  exit /b 1
-)
-
-if "%~1"=="" (
-  echo ERROR: missing restore source ^(backup file/path^). Provide it as the first argument.
-  echo Example: restore.bat C:\path\to\backup.zip
-  exit /b 2
-)
-
-echo INFO: Restoring Odoo database "{db_name}" using config %CONF%. Passing through any extra arguments.
-"%RESTORE_BIN%" -c "%CONF%" --copy --neutralize --force --log-level debug "{db_name}" %*
-
-endlocal
-"""
-    layout.scripts_dir.mkdir(parents=True, exist_ok=True)
-    layout.script("restore_force", "bat").write_text(content.replace("\n", "\r\n"), encoding="utf-8")
-
-
 def write_update_sh(layout: Layout) -> None:
     content = f"""#!/usr/bin/env bash
 set -euo pipefail
@@ -1968,79 +1883,6 @@ endlocal
 """
     layout.scripts_dir.mkdir(parents=True, exist_ok=True)
     layout.script("update", "bat").write_text(content.replace("\n", "\r\n"), encoding="utf-8")
-
-
-def write_update_all_sh(layout: Layout) -> None:
-    content = f"""#!/usr/bin/env bash
-set -euo pipefail
-
-# Resolve script directory
-SCRIPT_DIR="$(cd "$(dirname "${{BASH_SOURCE[0]}}")" && pwd)"
-ROOT_DIR="$(cd "${{SCRIPT_DIR}}/.." && pwd)"
-
-VENV_DIR="${{ROOT_DIR}}/venv"
-UPDATE_BIN="${{VENV_DIR}}/bin/click-odoo-update"
-CONF="${{ROOT_DIR}}/odoo-configs/odoo-server.conf"
-
-if [[ ! -d "${{VENV_DIR}}" ]]; then
-  echo "ERROR: required venv directory not found at ${{VENV_DIR}}" >&2
-  exit 1
-fi
-if [[ ! -x "${{UPDATE_BIN}}" ]]; then
-  echo "ERROR: click-odoo-update not found/executable at ${{UPDATE_BIN}}" >&2
-  exit 1
-fi
-if [[ ! -f "${{CONF}}" ]]; then
-  echo "ERROR: Odoo config not found at ${{CONF}}" >&2
-  exit 1
-fi
-
-echo "INFO: Updating all Odoo addons using config ${{CONF}}. Passing through any extra arguments."
-exec "${{UPDATE_BIN}}" -c "${{CONF}}" --update-all --log-level debug "$@"
-"""
-    layout.scripts_dir.mkdir(parents=True, exist_ok=True)
-    layout.script("update_all", "sh").write_text(content, encoding="utf-8")
-
-    try:
-        mode = layout.script("update_all", "sh").stat().st_mode
-        layout.script("update_all", "sh").chmod(mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    except OSError:
-        pass
-
-
-def write_update_all_bat(layout: Layout) -> None:
-    content = rf"""@echo off
-setlocal enabledelayedexpansion
-
-REM Resolve ROOT directory (parent of this script directory)
-set SCRIPT_DIR=%~dp0
-if "%SCRIPT_DIR:~-1%"=="\" set SCRIPT_DIR=%SCRIPT_DIR:~0,-1%
-for %%I in ("%SCRIPT_DIR%\..") do set ROOT_DIR=%%~fI
-
-set VENV_DIR=%ROOT_DIR%\venv
-set UPDATE_BIN=%VENV_DIR%\Scripts\click-odoo-update.exe
-set CONF=%ROOT_DIR%\odoo-configs\odoo-server.conf
-
-if not exist "%VENV_DIR%" (
-  echo ERROR: required venv directory not found at %VENV_DIR%
-  exit /b 1
-)
-if not exist "%UPDATE_BIN%" (
-  echo ERROR: click-odoo-update not found at %UPDATE_BIN%
-  exit /b 1
-)
-if not exist "%CONF%" (
-  echo ERROR: Odoo config not found at %CONF%
-  exit /b 1
-)
-
-echo INFO: Updating Odoo addons using config %CONF%. Passing through any extra arguments.
-"%UPDATE_BIN%" -c "%CONF%" --update-all --log-level debug %*
-
-endlocal
-"""
-    layout.scripts_dir.mkdir(parents=True, exist_ok=True)
-    layout.script("update_all", "bat").write_text(content.replace("\n", "\r\n"), encoding="utf-8")
 
 
 # -----------------------------
@@ -2387,14 +2229,12 @@ def sync_project(
             write_test_bat(layout)
             write_shell_bat(layout)
             write_update_bat(layout)
-            write_update_all_bat(layout)
         else:
             write_run_sh(layout)
             write_instance_sh(layout)
             write_test_sh(layout)
             write_shell_sh(layout)
             write_update_sh(layout)
-            write_update_all_sh(layout)
 
         db_name = cfg.config.get("db_name")
         if not isinstance(db_name, str) or not db_name.strip():
@@ -2407,12 +2247,10 @@ def sync_project(
                 write_initdb_bat(layout, db_name.strip())
                 write_backup_bat(layout, db_name.strip())
                 write_restore_bat(layout, db_name.strip())
-                write_restore_force_bat(layout, db_name.strip())
             else:
                 write_initdb_sh(layout, db_name.strip())
                 write_backup_sh(layout, db_name.strip())
                 write_restore_sh(layout, db_name.strip())
-                write_restore_force_sh(layout, db_name.strip())
     else:
         _logger.info("Skipping script generation (--no-scripts).")
 
@@ -2473,9 +2311,7 @@ def sync_project(
             print(f"  - initdb:           {layout.script("initdb", "bat")}")
             print(f"  - backup:           {layout.script("backup", "bat")}")
             print(f"  - restore:          {layout.script("restore", "bat")}")
-            print(f"  - restore_force:    {layout.script("restore_force", "bat")}")
             print(f"  - update:           {layout.script("update", "bat")}")
-            print(f"  - update-all:       {layout.script("update_all", "bat")}")
         else:
             print(f"  - run:              {layout.script("run", "sh")}")
             print(f"  - test:             {layout.script("test", "sh")}")
@@ -2483,9 +2319,7 @@ def sync_project(
             print(f"  - initdb:           {layout.script("initdb", "sh")}")
             print(f"  - backup:           {layout.script("backup", "sh")}")
             print(f"  - restore:          {layout.script("restore", "sh")}")
-            print(f"  - restore_force:    {layout.script("restore_force", "sh")}")
             print(f"  - update:           {layout.script("update", "sh")}")
-            print(f"  - update-all:       {layout.script("update_all", "sh")}")
 
 
 # -----------------------------
