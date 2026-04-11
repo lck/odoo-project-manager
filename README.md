@@ -206,7 +206,7 @@ After changing the project file, run `odt-env` again to update the workspace:
 odt-env odoo-project.ini --sync-all --create-venv
 ```
 
-### 2.5. Update database and run Odoo
+#### 2.5. Update database and run Odoo
 
 Once the workspace has been updated, refresh installed modules:
 
